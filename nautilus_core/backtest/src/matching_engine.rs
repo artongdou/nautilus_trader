@@ -29,7 +29,7 @@ use nautilus_model::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
     },
-    enums::{AccountType, BookType, LiquiditySide, MarketStatus, OmsType},
+    enums::{AccountType, BookType, LiquiditySide, MarketStatus, OmsType, OrderSide, OrderType},
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
         OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
@@ -45,6 +45,7 @@ use nautilus_model::{
         trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
+    position::Position,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use ustr::Ustr;
@@ -63,7 +64,7 @@ pub struct OrderMatchingEngineConfig {
 #[allow(clippy::derivable_impls)]
 impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
-        OrderMatchingEngineConfig {
+        Self {
             bar_execution: false,
             reject_stop_orders: false,
             support_gtd_orders: false,
@@ -311,6 +312,111 @@ impl OrderMatchingEngine {
                 return;
             }
         }
+
+        // Get position if exists
+        let position: Option<&Position> = self
+            .cache
+            .position_for_order(&order.client_order_id())
+            .or_else(|| {
+                if self.oms_type == OmsType::Netting {
+                    let position_id = PositionId::new(
+                        format!("{}-{}", order.instrument_id(), order.strategy_id()).as_str(),
+                    )
+                    .unwrap();
+                    self.cache.position(&position_id)
+                } else {
+                    None
+                }
+            });
+
+        // Check not shorting an equity without a MARGIN account
+        if order.order_side() == OrderSide::Sell
+            && self.account_type != AccountType::Margin
+            && matches!(self.instrument, InstrumentAny::Equity(_))
+            && (position.is_none()
+                || !order.would_reduce_only(position.unwrap().side, position.unwrap().quantity))
+        {
+            let position_string = position.map_or("None".to_string(), |pos| pos.id.to_string());
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "Short selling not permitted on a CASH account with position {position_string} and order {order}",
+                )
+                .into(),
+            );
+            return;
+        }
+
+        // Check reduce-only instruction
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && !order.is_closed()
+            && position.map_or(true, |pos| {
+                pos.is_closed()
+                    || (order.is_buy() && pos.is_long())
+                    || (order.is_sell() && pos.is_short())
+            })
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "Reduce-only order {} ({}-{}) would have increased position",
+                    order.client_order_id(),
+                    order.order_type().to_string().to_uppercase(),
+                    order.order_side().to_string().to_uppercase()
+                )
+                .into(),
+            );
+            return;
+        }
+
+        match order.order_type() {
+            OrderType::Market => self.process_market_order(order),
+            OrderType::Limit => self.process_limit_order(order),
+            OrderType::MarketToLimit => self.process_market_to_limit_order(order),
+            OrderType::StopMarket => self.process_stop_market_order(order),
+            OrderType::StopLimit => self.process_stop_limit_order(order),
+            OrderType::MarketIfTouched => self.process_market_if_touched_order(order),
+            OrderType::LimitIfTouched => self.process_limit_if_touched_order(order),
+            OrderType::TrailingStopMarket => self.process_trailing_stop_market_order(order),
+            OrderType::TrailingStopLimit => self.process_trailing_stop_limit_order(order),
+        }
+    }
+
+    fn process_market_order(&mut self, order: &OrderAny) {
+        todo!("process_market_order")
+    }
+
+    fn process_limit_order(&mut self, order: &OrderAny) {
+        todo!("process_limit_order")
+    }
+
+    fn process_market_to_limit_order(&mut self, order: &OrderAny) {
+        todo!("process_market_to_limit_order")
+    }
+
+    fn process_stop_market_order(&mut self, order: &OrderAny) {
+        todo!("process_stop_market_order")
+    }
+
+    fn process_stop_limit_order(&mut self, order: &OrderAny) {
+        todo!("process_stop_limit_order")
+    }
+
+    fn process_market_if_touched_order(&mut self, order: &OrderAny) {
+        todo!("process_market_if_touched_order")
+    }
+
+    fn process_limit_if_touched_order(&mut self, order: &OrderAny) {
+        todo!("process_limit_if_touched_order")
+    }
+
+    fn process_trailing_stop_market_order(&mut self, order: &OrderAny) {
+        todo!("process_trailing_stop_market_order")
+    }
+
+    fn process_trailing_stop_limit_order(&mut self, order: &OrderAny) {
+        todo!("process_trailing_stop_limit_order")
     }
 
     // -- ORDER PROCESSING ----------------------------------------------------
@@ -684,7 +790,11 @@ mod tests {
         enums::{AccountType, BookType, OmsType, OrderSide},
         events::order::{OrderEventAny, OrderEventType},
         identifiers::AccountId,
-        instruments::{any::InstrumentAny, stubs::futures_contract_es},
+        instruments::{
+            any::InstrumentAny,
+            equity::Equity,
+            stubs::{futures_contract_es, *},
+        },
         orders::stubs::TestOrderStubs,
         types::{price::Price, quantity::Quantity},
     };
@@ -740,15 +850,17 @@ mod tests {
     fn get_order_matching_engine(
         instrument: InstrumentAny,
         msgbus: Rc<MessageBus>,
+        account_type: Option<AccountType>,
+        config: Option<OrderMatchingEngineConfig>,
     ) -> OrderMatchingEngine {
         let cache = Rc::new(Cache::default());
-        let config = OrderMatchingEngineConfig::default();
+        let config = config.unwrap_or_default();
         OrderMatchingEngine::new(
             instrument,
             1,
             BookType::L1_MBP,
             OmsType::Netting,
-            AccountType::Cash,
+            account_type.unwrap_or(AccountType::Cash),
             &ATOMIC_TIME,
             msgbus,
             cache,
@@ -785,7 +897,7 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -835,7 +947,7 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -871,7 +983,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument_es.id(),
             OrderSide::Buy,
@@ -907,7 +1020,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let limit_order = TestOrderStubs::limit_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -945,7 +1059,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let stop_order = TestOrderStubs::stop_market_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -966,6 +1081,95 @@ mod tests {
         assert_eq!(
             first_message.message().unwrap(),
             Ustr::from("Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ1.GLBX price precision is 2")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_error_shorting_equity_without_margin_account(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        equity_aapl: Equity,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
+        let order = TestOrderStubs::market_order(
+            instrument.id(),
+            OrderSide::Sell,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+
+        engine.process_order(&order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from(
+                "Short selling not permitted on a CASH account with position None and order \
+                MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, \
+                 venue_order_id=None, position_id=None, exec_algorithm_id=None, \
+                 exec_spawn_id=None, tags=None)")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_reduce_only_error(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine (with reduce_only option) and process order
+        let config = OrderMatchingEngineConfig {
+            use_reduce_only: true,
+            bar_execution: false,
+            reject_stop_orders: false,
+            support_gtd_orders: false,
+            support_contingent_orders: false,
+            use_position_ids: false,
+            use_random_ids: false,
+        };
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, Some(config));
+        let market_order = TestOrderStubs::market_order_reduce(
+            instrument_es.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+
+        engine.process_order(&market_order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Reduce-only order O-19700101-000000-001-001-1 (MARKET-BUY) would have increased position")
         );
     }
 }

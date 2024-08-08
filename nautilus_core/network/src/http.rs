@@ -19,6 +19,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
     sync::Arc,
+    time::Duration,
 };
 
 use bytes::Bytes;
@@ -78,6 +79,7 @@ impl InnerHttpClient {
         url: String,
         headers: HashMap<String, String>,
         body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
         let reqwest_url = Url::parse(url.as_str())?;
 
@@ -87,7 +89,11 @@ impl InnerHttpClient {
             let _ = header_map.insert(key, header_value.parse().unwrap());
         }
 
-        let request_builder = self.client.request(method, reqwest_url).headers(header_map);
+        let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
+
+        if let Some(timeout_secs) = timeout_secs {
+            request_builder = request_builder.timeout(Duration::new(timeout_secs, 0));
+        }
 
         let request = match body {
             Some(b) => request_builder.body(b).build()?,
@@ -217,6 +223,7 @@ mod tests {
                 format!("{url}/get"),
                 HashMap::new(),
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -236,6 +243,7 @@ mod tests {
                 reqwest::Method::POST,
                 format!("{url}/post"),
                 HashMap::new(),
+                None,
                 None,
             )
             .await
@@ -270,6 +278,7 @@ mod tests {
                 format!("{url}/post"),
                 HashMap::new(),
                 Some(body_bytes),
+                None,
             )
             .await
             .unwrap();
@@ -289,6 +298,7 @@ mod tests {
                 format!("{url}/patch"),
                 HashMap::new(),
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -307,6 +317,7 @@ mod tests {
                 reqwest::Method::DELETE,
                 format!("{url}/delete"),
                 HashMap::new(),
+                None,
                 None,
             )
             .await
