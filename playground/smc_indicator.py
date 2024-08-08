@@ -119,9 +119,10 @@ class SmartMoneyConcept(Indicator):
         self._ob = deque()
 
     def get_order_blocks(self):
-        # return only the latest ones
-        return list(self._ob)[-self.order_block_count:]
-        # return list(islice(self._ob, max(0, len(self._ob) - self.order_block_count), len(self._ob)))
+        '''
+        Return only the most recent {order_block_count} of order blocks
+        '''
+        return list(islice(self._ob, max(0, len(self._ob) - self.order_block_count), len(self._ob)))
         
 
     def handle_bar(self, bar: Bar):
