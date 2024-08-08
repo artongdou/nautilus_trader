@@ -121,6 +121,7 @@ class SmartMoneyConcept(Indicator):
     def get_order_blocks(self):
         '''
         Return only the most recent {order_block_count} of order blocks
+        Order block is a list of (low, high, local timestamp, OrderBlockType) ordered by ts
         '''
         return list(islice(self._ob, max(0, len(self._ob) - self.order_block_count), len(self._ob)))
         
