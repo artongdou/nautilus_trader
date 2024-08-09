@@ -18,7 +18,7 @@ pip install python-dotenv
 pip install -U "nautilus_trader[docker,ib]"
 ```
 
-Create a `.env` file in `/playground`
+Create a new file in `/playground/.env`
 
 ```
 PAPER_ACCOUNT_NUMBER="<Insert IB account number here>"
