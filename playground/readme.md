@@ -27,7 +27,10 @@ PAPER_PORT="7497"
 
 ## How to run
 
+Log in TWS and run the following commands:
+
 ```
 pyenv activate nautilus
+cd playground
 python connect_with_tws_paper.py
 ```
