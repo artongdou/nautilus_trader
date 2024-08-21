@@ -167,19 +167,22 @@ class SmartMoneyConcept(Indicator):
             # Only update swing high/low when swing type changes
             if self.prev_swing_type == SwingType.HIGH and self.curr_swing_type == SwingType.LOW:
                 # New swing high detected
-                #       *
-                #     |   |
-                #   |      |
-                # |
+                #  *
+                #    |
+                #      |
+                #        |  
+                #          |  
                 self.swing_high.x = len(self.bars) - self.period - 1
                 self.swing_high.bar = candidate_bar
                 self.swing_high.is_valid = True
-            elif  self.prev_swing_type == SwingType.LOW and self.curr_swing_type == SwingType.HIGH:
+
+            if self.prev_swing_type == SwingType.LOW and self.curr_swing_type == SwingType.HIGH:
                 # New swing low detected
-                # |
-                #   |      |
-                #     |   |
-                #       *
+                #          |  
+                #        |  
+                #      |
+                #    |
+                #  *
                 self.swing_low.x = len(self.bars) - self.period - 1
                 self.swing_low.bar = candidate_bar
                 self.swing_low.is_valid = True
@@ -198,7 +201,8 @@ class SmartMoneyConcept(Indicator):
                     # Add buy order blocks
                     self._ob.append((self.bars[idx].low.as_double(), self.bars[idx].high.as_double(), self.bars[idx].ts_event, OrderBlockType.BUY))
                     self.swing_high.is_valid = False
-            elif self.swing_low.is_valid:
+
+            if self.swing_low.is_valid:
                 # Check if current close crossunder the previous swing low
                 if bar.close.as_double() < self.swing_low.bar.low.as_double():
                     max_high = 0.0
@@ -214,16 +218,16 @@ class SmartMoneyConcept(Indicator):
                     self.swing_low.is_valid = False
 
             # Delete order blocks box coordinates if top/bottom is broken
-            # n = len(self._ob)
-            # for _ in range(n):
-            #     l, h, ts, type = self._ob.popleft()
-            #     if bar.close.as_double() < l and type == OrderBlockType.BUY:
-            #         # Delete the order block
-            #         continue
-            #     elif bar.close.as_double() > h and type == OrderBlockType.SELL:
-            #         # Delete the order block
-            #         continue
-            #     self._ob.append((l,h,ts,type))
+            n = len(self._ob)
+            for _ in range(n):
+                l, h, ts, type = self._ob.popleft()
+                if bar.close.as_double() < l and type == OrderBlockType.BUY:
+                    # Delete the order block
+                    continue
+                elif bar.close.as_double() > h and type == OrderBlockType.SELL:
+                    # Delete the order block
+                    continue
+                self._ob.append((l,h,ts,type))
 
         # Purge oldest order block if needed
         # Note: Store double in case some order blocks are broken and deleted
@@ -239,8 +243,8 @@ class SmartMoneyConcept(Indicator):
                 self._set_initialized(True)
 
         self.log.debug(f"ATR:\t{self._atr.value}")
-        self.log.debug(f"Swing High:\t{self.swing_high}")
-        self.log.debug(f"Swing Low:\t{self.swing_low}")
+        self.log.info(f"Swing High:\t{self.swing_high}")
+        self.log.info(f"Swing Low:\t{self.swing_low}")
         self.log.info(f"Order blocks: {len(self._ob)}", LogColor.CYAN)
         self.log.info(f"Order blocks: {list(self._ob)}", LogColor.CYAN)
 
