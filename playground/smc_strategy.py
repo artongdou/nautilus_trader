@@ -104,6 +104,18 @@ class SmartMoneyConceptStrategy(Strategy):
         self.log.info(str(tick))
 
     def on_bar(self, bar: Bar) -> None:
-        self.log.info(str(bar))
+        self.log.info(str(Bar.to_dict(bar)))
         self.log.info(f"Order blocks:\t{len(self.smc.get_order_blocks())}", LogColor.GREEN)
         self.log.info(f"Order blocks:\t{list(self.smc.get_order_blocks())}", LogColor.GREEN)
+        # self.series.append(Bar.to_dict(bar))
+
+    def on_stop(self) -> None:
+        df = pd.DataFrame([Bar.to_dict(bar) for bar in self.smc.bars])
+        df.set_index("ts_event", inplace=True)
+        df.to_csv("playground/bars.csv")
+
+        df = pd.DataFrame(
+            self.smc.get_order_blocks(),
+            columns=["low", "high", "ts_event", "OrderBlockType"],
+        )
+        df.to_csv("playground/ob.csv")

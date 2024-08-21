@@ -121,9 +121,10 @@ class SmartMoneyConcept(Indicator):
     def get_order_blocks(self):
         '''
         Return only the most recent {order_block_count} of order blocks
-        Order block is a list of (low, high, local timestamp, OrderBlockType) ordered by ts
+        Order block is a list of (low, high, ts_event, OrderBlockType) ordered by ts
         '''
-        return list(islice(self._ob, max(0, len(self._ob) - self.order_block_count), len(self._ob)))
+        return list(self._ob)
+        # return list(islice(self._ob, max(0, len(self._ob) - self.order_block_count), len(self._ob)))
         
 
     def handle_bar(self, bar: Bar):
@@ -138,6 +139,7 @@ class SmartMoneyConcept(Indicator):
         """
         PyCondition.not_none(bar, "bar")
         self.log.debug(f"Handling bar data in SMC indicator: {str(bar)}", LogColor.BLUE)
+
         # Update ATR
         self._atr.update_raw(bar.high.as_double(), bar.low.as_double(), bar.close.as_double())
 
@@ -194,7 +196,7 @@ class SmartMoneyConcept(Indicator):
                             min_low = min(min_low, low)
                             idx = i if min_low == low else idx
                     # Add buy order blocks
-                    self._ob.append((self.bars[idx].low.as_double(), self.bars[idx].high.as_double(), to_local_time(self.bars[idx].ts_event), OrderBlockType.BUY))
+                    self._ob.append((self.bars[idx].low.as_double(), self.bars[idx].high.as_double(), self.bars[idx].ts_event, OrderBlockType.BUY))
                     self.swing_high.is_valid = False
             elif self.swing_low.is_valid:
                 # Check if current close crossunder the previous swing low
@@ -208,20 +210,20 @@ class SmartMoneyConcept(Indicator):
                             max_high = max(max_high, high)
                             idx = i if max_high == high else idx
                     # Add sell order blocks
-                    self._ob.append((self.bars[idx].low.as_double(), self.bars[idx].high.as_double(), to_local_time(self.bars[idx].ts_event), OrderBlockType.SELL))
+                    self._ob.append((self.bars[idx].low.as_double(), self.bars[idx].high.as_double(), self.bars[idx].ts_event, OrderBlockType.SELL))
                     self.swing_low.is_valid = False
 
             # Delete order blocks box coordinates if top/bottom is broken
-            n = len(self._ob)
-            for _ in range(n):
-                l, h, ts, type = self._ob.popleft()
-                if bar.close.as_double() < l and type == OrderBlockType.BUY:
-                    # Delete the order block
-                    continue
-                elif bar.close.as_double() > h and type == OrderBlockType.SELL:
-                    # Delete the order block
-                    continue
-                self._ob.append((l,h,ts,type))
+            # n = len(self._ob)
+            # for _ in range(n):
+            #     l, h, ts, type = self._ob.popleft()
+            #     if bar.close.as_double() < l and type == OrderBlockType.BUY:
+            #         # Delete the order block
+            #         continue
+            #     elif bar.close.as_double() > h and type == OrderBlockType.SELL:
+            #         # Delete the order block
+            #         continue
+            #     self._ob.append((l,h,ts,type))
 
         # Purge oldest order block if needed
         # Note: Store double in case some order blocks are broken and deleted

@@ -117,8 +117,8 @@ node = TradingNode(config=config_node)
 #     quote_ticks=False,
 #     bars=True,
 # )
-# instrument_id = InstrumentId.from_str("SPY.ARCA")
-instrument_id = InstrumentId.from_str("BTC/USD.PAXOS")
+instrument_id = InstrumentId.from_str("SPY.ARCA")
+# instrument_id = InstrumentId.from_str("BTC/USD.PAXOS")
 strategy_config = SmartMoneyConceptStrategyConfig(
     instrument_id=instrument_id,
     bar_type=BarType(
